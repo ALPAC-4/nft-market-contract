@@ -57,7 +57,8 @@ fn fixed_price_order_test() {
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
-    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()]
+    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
+    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();

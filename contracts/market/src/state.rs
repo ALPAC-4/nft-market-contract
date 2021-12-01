@@ -55,6 +55,8 @@ pub struct CollectionInfo {
   pub nft_address: Addr,
   pub support_assets: Vec<AssetInfo>,
   pub royalties: Vec<Royalty>,
+  // dev note. do i have to move it to config?
+  pub auction_cancel_fee_rate: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

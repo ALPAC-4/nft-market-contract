@@ -1,8 +1,9 @@
-use cosmwasm_std::{to_binary, Binary, Deps, StdResult, Order::Ascending as Ascending};
+use cosmwasm_std::{to_binary, Binary, Deps, StdResult, Order::Ascending as Ascending, Uint128};
 use cw_storage_plus::{Bound, U64Key};
 
 use crate::state::{MarketContract, CollectionInfo, Order};
 use crate::msgs::QueryMsg;
+use crate::asset::Asset;
 
 const DEFAULT_LIMIT: u32 = 10;
 const MAX_LIMIT: u32 = 30;
@@ -47,6 +48,33 @@ impl<'a> MarketContract<'a> {
 
     Ok(collection_infos)
   }
+
+  fn cancel_fee(&self, deps: Deps, order_id: u64) -> StdResult<Asset> {
+    let order = self.orders.load(deps.storage, U64Key::new(order_id))?;
+
+    let fee: Asset;
+
+    let auction_info = order.auction_info;
+
+    // if it is auction
+    if let Some(auction_info) = auction_info {
+      let nft_address = order.nft_address;
+      let collection = self.collections.load(deps.storage, nft_address.to_string())?;
+
+      fee = Asset {
+        info: auction_info.highest_bid.info,
+        amount: auction_info.highest_bid.amount * collection.auction_cancel_fee_rate
+      }
+    // if it is not auction return 0 amount asset
+    } else {
+      fee = Asset {
+        info: order.price.unwrap().info,
+        amount: Uint128::zero()
+      }
+    }
+
+    Ok(fee)
+  }
 }
 
 impl<'a> MarketContract<'a> {
@@ -58,7 +86,9 @@ impl<'a> MarketContract<'a> {
       QueryMsg::CollectionInfo { nft_address } 
         => to_binary(&self.collections.load(deps.storage, nft_address)?),
       QueryMsg::CollectionInfos { start_after, limit }
-       => to_binary(&self.collection_infos(deps, start_after, limit)?)
+        => to_binary(&self.collection_infos(deps, start_after, limit)?),
+      QueryMsg::CancelFee { order_id }
+        => to_binary(&self.cancel_fee(deps, order_id)?) 
     }
   }
 }

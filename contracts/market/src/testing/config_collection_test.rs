@@ -130,7 +130,8 @@ fn add_and_update_collection_test() {
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone()],
-    royalties: vec![normal_user_royalty]
+    royalties: vec![normal_user_royalty],
+    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg);
@@ -145,7 +146,8 @@ fn add_and_update_collection_test() {
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
-    royalties: vec![nft_designer_royalty_invalid.clone(), nft_pm_royalty_invalid.clone()]
+    royalties: vec![nft_designer_royalty_invalid.clone(), nft_pm_royalty_invalid.clone()],
+    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg);
@@ -160,7 +162,8 @@ fn add_and_update_collection_test() {
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
-    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()]
+    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
+    auction_cancel_fee_rate: Decimal::from_ratio(5u128, 1000u128)
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();
@@ -170,6 +173,7 @@ fn add_and_update_collection_test() {
   assert_eq!(Addr::unchecked("spaceship"), collection.nft_address);
   assert_eq!(vec![uusd.clone(), mir.clone()], collection.support_assets);
   assert_eq!(vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()], collection.royalties);
+  assert_eq!(Decimal::from_ratio(5u128, 1000u128), collection.auction_cancel_fee_rate);
 
   // try to add collection that already exist
   // dev note: do i have to remove this limit and remove update collection function?
@@ -177,7 +181,8 @@ fn add_and_update_collection_test() {
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
-    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()]
+    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
+    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg);
@@ -192,7 +197,8 @@ fn add_and_update_collection_test() {
   let update_collection_msg = ExecuteMsg::UpdateCollection {
     nft_address: "spaceship".to_string(),
     support_assets: Some(vec![uusd.clone(), mir.clone()]),
-    royalties: Some(vec![nft_designer_royalty.clone()])
+    royalties: Some(vec![nft_designer_royalty.clone()]),
+    auction_cancel_fee_rate: Some(Decimal::zero())
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, update_collection_msg);
@@ -207,7 +213,8 @@ fn add_and_update_collection_test() {
   let update_collection_msg = ExecuteMsg::UpdateCollection {
     nft_address: "spaceship".to_string(),
     support_assets: None,
-    royalties: Some(vec![nft_designer_royalty_invalid.clone(), nft_pm_royalty_invalid.clone()])
+    royalties: Some(vec![nft_designer_royalty_invalid.clone(), nft_pm_royalty_invalid.clone()]),
+    auction_cancel_fee_rate: Some(Decimal::zero())
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info.clone(), update_collection_msg);
@@ -221,7 +228,8 @@ fn add_and_update_collection_test() {
   let update_collection_msg = ExecuteMsg::UpdateCollection {
     nft_address: "spaceship".to_string(),
     support_assets: Some(vec![uusd.clone()]),
-    royalties: Some(vec![nft_designer_royalty.clone()])
+    royalties: Some(vec![nft_designer_royalty.clone()]),
+    auction_cancel_fee_rate: Some(Decimal::zero())
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, update_collection_msg);
@@ -231,4 +239,5 @@ fn add_and_update_collection_test() {
   assert_eq!(Addr::unchecked("spaceship"), collection.nft_address);
   assert_eq!(vec![uusd], collection.support_assets);
   assert_eq!(vec![nft_designer_royalty], collection.royalties);
+  assert_eq!(Decimal::zero(), collection.auction_cancel_fee_rate);
 }

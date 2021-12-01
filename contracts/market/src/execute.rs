@@ -1,4 +1,4 @@
-use cosmwasm_std::{from_binary, to_binary, Addr, CosmosMsg, Decimal, DepsMut, Env, MessageInfo, StdResult, Response, WasmMsg, Uint128};
+use cosmwasm_std::{from_binary, to_binary, Addr, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, StdResult, Response, WasmMsg, Uint128};
 use cw_storage_plus::U64Key;
 use cw721::{Cw721ReceiveMsg, Cw721ExecuteMsg};
 use cw20::Cw20ReceiveMsg;
@@ -44,11 +44,11 @@ impl<'a> MarketContract<'a> {
       ExecuteMsg::UpdateConfig { owner, min_increase, max_auction_duration_block, max_auction_duration_second } 
         => self.update_config(deps, env, info, owner, min_increase, max_auction_duration_block, max_auction_duration_second),
       ExecuteMsg::ExecuteOrder { order_id } => self.execute_order(deps, env, info.clone(), info.sender, order_id, None),
-      ExecuteMsg::CancelOrder { order_id } => self.cancel_order(deps, env, info, order_id),
-      ExecuteMsg::AddCollection { nft_address, support_assets, royalties } 
-        => self.add_collection(deps, env, info, nft_address, support_assets, royalties),
-      ExecuteMsg::UpdateCollection { nft_address, support_assets, royalties } 
-        => self.update_collection(deps, env, info, nft_address, support_assets, royalties),
+      ExecuteMsg::CancelOrder { order_id } => self.cancel_order(deps, env, info.clone(), info.sender, order_id, None),
+      ExecuteMsg::AddCollection { nft_address, support_assets, royalties, auction_cancel_fee_rate } 
+        => self.add_collection(deps, env, info, nft_address, support_assets, royalties, auction_cancel_fee_rate),
+      ExecuteMsg::UpdateCollection { nft_address, support_assets, royalties, auction_cancel_fee_rate } 
+        => self.update_collection(deps, env, info, nft_address, support_assets, royalties, auction_cancel_fee_rate),
       ExecuteMsg::Bid { order_id, bid_price } => self.bid(deps, env, info.clone(), info.sender, order_id, bid_price),
       ExecuteMsg::ExecuteAuction { order_id } => self.execute_auction(deps, env, info, order_id)
     }
@@ -233,7 +233,9 @@ impl<'a> MarketContract <'a> {
       Cw20HookMsg::ExecuteOrder { order_id } 
         => self.execute_order(deps, env, info, sender, order_id, Some(asset)),
       Cw20HookMsg::Bid { order_id } 
-        => self.bid(deps, env, info, sender, order_id, asset)
+        => self.bid(deps, env, info, sender, order_id, asset),
+      Cw20HookMsg::CancelOrder { order_id } 
+        => self.cancel_order(deps, env, info, sender, order_id, Some(asset))
     }
   }
 
@@ -377,25 +379,32 @@ impl<'a> MarketContract <'a> {
   pub fn cancel_order(
     &self,
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
-    order_id: u64
+    sender: Addr,
+    order_id: u64,
+    cancel_fee: Option<Asset>
   ) -> Result<Response, ContractError> {
     let key = U64Key::new(order_id);
 
     let order = self.orders.load(deps.storage, key.clone())?;
 
     // only seller can execute
-    if order.seller_address != info.sender.clone() {
+    if order.seller_address != sender.clone() {
       return Err(ContractError::Unauthorized {})
     }
 
-    let auction_info = order.auction_info;
-    if let Some(_auction_info) = auction_info {
-      return Err(ContractError::CantCancel {})
-    }
-
     let mut messages: Vec<CosmosMsg> = vec![];
+
+    // if auction refund latest bid first
+    let auction_info = order.clone().auction_info;
+    if let Some(auction_info) = auction_info {
+      // can not cancel expired auction
+      if auction_info.expiration.is_expired(&env.block) {
+        return Err(ContractError::Expired {})
+      }
+      messages = self.refund_bid(deps.as_ref(), info.clone(), order.clone(), cancel_fee)?;
+    }
 
     // return nft to seller
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
@@ -412,7 +421,7 @@ impl<'a> MarketContract <'a> {
 
     Ok(Response::new().add_messages(messages)
       .add_attribute("action", "cancel_order")
-      .add_attribute("sender", info.sender)
+      .add_attribute("sender", sender)
       .add_attribute("order_id", order_id.to_string())
     )
   }
@@ -424,7 +433,8 @@ impl<'a> MarketContract <'a> {
     info: MessageInfo,
     nft_address: String,
     support_assets: Vec<AssetInfo>,
-    royalties: Vec<Royalty>
+    royalties: Vec<Royalty>,
+    auction_cancel_fee_rate: Decimal,
   ) -> Result<Response, ContractError> {
     // only owner can execute this
     let config = self.config.load(deps.storage)?;
@@ -447,10 +457,15 @@ impl<'a> MarketContract <'a> {
       return Err(ContractError::InvalidRoyaltyRate {})
     }
 
+    if sum_rotalty_rate > Decimal::one() {
+      return Err(ContractError::InvalidRoyaltyRate {})
+    }
+
     let collection_info = CollectionInfo {
       nft_address: deps.api.addr_validate(&nft_address)?,
       royalties,
-      support_assets
+      support_assets,
+      auction_cancel_fee_rate,
     };
 
     self.collections.save(deps.storage, nft_address.clone(), &collection_info)?;
@@ -469,7 +484,8 @@ impl<'a> MarketContract <'a> {
     info: MessageInfo,
     nft_address: String,
     support_assets: Option<Vec<AssetInfo>>,
-    royalties: Option<Vec<Royalty>>
+    royalties: Option<Vec<Royalty>>,
+    auction_cancel_fee_rate: Option<Decimal>
   ) -> Result<Response, ContractError> {
     // only owner can execute this
     let config = self.config.load(deps.storage)?;
@@ -496,6 +512,14 @@ impl<'a> MarketContract <'a> {
       }
 
       collection.royalties = royalties;
+    }
+
+    if let Some(auction_cancel_fee_rate) = auction_cancel_fee_rate {
+      if auction_cancel_fee_rate > Decimal::one() {
+        return Err(ContractError::InvalidFeeRate {})
+      }
+
+      collection.auction_cancel_fee_rate = auction_cancel_fee_rate;
     }
 
     self.collections.save(deps.storage, nft_address.clone(), &collection)?;
@@ -636,5 +660,68 @@ impl<'a> MarketContract <'a> {
     self.orders.remove(deps.storage, U64Key::new(order.id));
 
     Ok((messages, remain_amount))
+  }
+
+  fn refund_bid(
+    &self,
+    deps: Deps,
+    info: MessageInfo,
+    order: Order,
+    cancel_fee: Option<Asset>
+  ) -> Result<Vec<CosmosMsg>, ContractError> {
+    let auction_info = order.auction_info.unwrap();
+    let bidder = auction_info.bidder;
+    let collection_info = self.collections.load(deps.storage, order.nft_address.to_string())?;
+
+    let mut messages: Vec<CosmosMsg> = vec![];
+
+    // if bid exist refund bid amount + cancel fee
+    if let Some(bidder) = bidder {
+      let bid_price = auction_info.highest_bid;
+      let cancel_fee_amount = bid_price.amount * collection_info.auction_cancel_fee_rate;
+
+      let fee_asset = Asset {
+        info: bid_price.info.clone(),
+        amount: cancel_fee_amount
+      };
+      
+      let refund_asset = Asset {
+        info: bid_price.info,
+        amount: bid_price.amount + cancel_fee_amount
+      };
+
+      // check balance
+      match fee_asset.info.clone() {
+        AssetInfo::NativeToken { denom } => {
+          match info.funds.iter().find(|x| x.denom == denom) {
+            Some(coin) => {
+              if fee_asset.amount != coin.amount {
+                return Err(ContractError::CancelFeeMismatch{ fee_asset })
+              }
+            }
+            None => {
+              if !fee_asset.amount.is_zero() {
+                return Err(ContractError::CancelFeeMismatch{ fee_asset })
+              }
+            }
+          }
+        }
+        AssetInfo::Token { .. } => {
+          if let Some(cancel_fee) = cancel_fee {
+            if cancel_fee != fee_asset {
+              return Err(ContractError::CancelFeeMismatch{ fee_asset })
+            }
+          } else {
+            if !cancel_fee_amount.is_zero() {
+              return Err(ContractError::CancelFeeMismatch{ fee_asset })
+            }
+          }
+        }
+      }
+
+      messages.push(refund_asset.into_msg(&deps.querier, bidder)?);
+    }
+
+    Ok(messages)
   }
 }

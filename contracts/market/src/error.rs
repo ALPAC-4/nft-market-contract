@@ -1,5 +1,6 @@
 use cosmwasm_std::{StdError, OverflowError, Uint128};
 use thiserror::Error;
+use crate::asset::Asset;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ContractError {
@@ -20,6 +21,9 @@ pub enum ContractError {
 
   #[error("Sum of the royalty rate is higher than 100%")]
   InvalidRoyaltyRate {},
+
+  #[error("Auction cancel fee rate is higher than 100%")]
+  InvalidFeeRate {},
 
   #[error("The order doesn't have fixed price option")]
   NoFixedPrice {},
@@ -45,8 +49,8 @@ pub enum ContractError {
   #[error("Auction is not expired")]
   NotExpired {},
 
-  #[error("Auction can't cancel, only fixed price order can cancel ")]
-  CantCancel {},
+  #[error("Cancel fee mismatch you must send {} ", fee_asset)]
+  CancelFeeMismatch { fee_asset: Asset },
 
   #[error("You must bid higher or equal to {} (min bid amount)", min_bid_amount)]
   MinPrice { min_bid_amount: Uint128 },

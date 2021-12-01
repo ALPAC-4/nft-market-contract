@@ -35,7 +35,8 @@ pub enum ExecuteMsg {
   AddCollection {
     nft_address: String,
     support_assets: Vec<AssetInfo>,
-    royalties: Vec<Royalty>
+    royalties: Vec<Royalty>,
+    auction_cancel_fee_rate: Decimal,
   },
 
   // if you want to delist/remove the collection, set support_asset = vec![]
@@ -44,6 +45,7 @@ pub enum ExecuteMsg {
     nft_address: String,
     support_assets: Option<Vec<AssetInfo>>,
     royalties: Option<Vec<Royalty>>,
+    auction_cancel_fee_rate: Option<Decimal>,
   },
 
   // buy nft at fixed price.
@@ -74,6 +76,10 @@ pub enum Cw20HookMsg {
   },
 
   Bid {
+    order_id: u64,
+  },
+
+  CancelOrder {
     order_id: u64,
   }
 }
@@ -113,5 +119,9 @@ pub enum QueryMsg {
   Orders {
     start_after: Option<u64>,
     limit: Option<u32>
+  },
+
+  CancelFee {
+    order_id: u64
   }
 }

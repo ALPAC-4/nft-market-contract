@@ -1,5 +1,5 @@
 use cosmwasm_std::testing::{mock_env, mock_info};
-use cosmwasm_std::{to_binary, Addr, Coin, CosmosMsg, Decimal, SubMsg, Timestamp, WasmMsg, Uint128};
+use cosmwasm_std::{to_binary, from_binary, Addr, Coin, CosmosMsg, Decimal, SubMsg, Timestamp, WasmMsg, Uint128};
 use cw_storage_plus::U64Key;
 use cw721::{Cw721ExecuteMsg, Cw721ReceiveMsg};
 use cw20::Cw20ReceiveMsg;
@@ -7,7 +7,7 @@ use cw0::Expiration;
 
 use crate::{
   state::{AuctionInfo, MarketContract, Royalty},
-  msgs::{InstantiateMsg, ExecuteMsg, Cw721HookMsg},
+  msgs::{InstantiateMsg, ExecuteMsg, Cw721HookMsg, QueryMsg},
   error::ContractError,
   asset::{Asset, AssetInfo},
   testing::mock_querier::mock_dependencies
@@ -60,7 +60,8 @@ fn only_auction_order_test() {
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
-    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()]
+    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
+    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();
@@ -442,20 +443,6 @@ fn only_auction_order_test() {
     _ => panic!("Must return not expired error"),
   }
 
-  // try to cancel auction
-  let cancel_msg = ExecuteMsg::CancelOrder {
-    order_id: 1,
-  };
-
-  let info = mock_info("seller", &[]);
-  
-  let res = market.execute(deps.as_mut(), mock_env.clone(), info, cancel_msg);
-
-  match res {
-    Err(ContractError::CantCancel {} ) => assert!(true),
-    _ => panic!("Must return can't cancel error"),
-  }
-
   // execute auction
   let execute_auction_msg = ExecuteMsg::ExecuteAuction {
     order_id: 1,
@@ -619,6 +606,492 @@ fn only_auction_order_test() {
 }
 
 #[test]
+fn auction_cancel_test() {
+  // instantiate
+  let market = MarketContract::default();
+
+  let mut deps = mock_dependencies(&[]);
+
+  let instantiate_msg = InstantiateMsg {
+    owner: "owner".to_string(),
+    min_increase: Decimal::from_ratio(10u128, 100u128),
+    max_auction_duration_block: 100,
+    max_auction_duration_second: 1000
+  };
+
+  let info = mock_info("owner", &[]);
+
+  let _res = market.instantiate(deps.as_mut(), mock_env(), info.clone(), instantiate_msg).unwrap();
+
+  // need tax querier
+  deps.querier.with_tax(
+    Decimal::from_ratio(1u128, 100u128),
+    &[(&"uusd".to_string(), &Uint128::from(1000000u128))],
+  );
+
+  // some assetinfos
+  let uusd: AssetInfo = AssetInfo::NativeToken { denom: "uusd".to_string()};
+  let mir: AssetInfo = AssetInfo::Token { contract_addr: "mir_addr".to_string()};
+
+  // some royalties
+  let nft_designer_royalty: Royalty = Royalty {
+    address: Addr::unchecked("nft_designer"),
+    royalty_rate: Decimal::from_ratio(2u128, 100u128)
+  };
+
+  let nft_pm_royalty: Royalty = Royalty {
+    address: Addr::unchecked("nft_pm"),
+    royalty_rate: Decimal::from_ratio(3u128, 100u128)
+  };
+
+  // add collection zero cancel fee
+  let info = mock_info("owner", &[]);
+  let add_collection_msg = ExecuteMsg::AddCollection {
+    nft_address: "spaceship".to_string(),
+    support_assets: vec![uusd.clone(), mir.clone()],
+    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
+    auction_cancel_fee_rate: Decimal::zero()
+  };
+
+  let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();
+
+  let seller = "seller".to_string();
+
+  // mock_env's info
+  // height: 12_345,
+  // time: Timestamp::from_nanos(1_571_797_419_879_305_533),
+
+  // make order
+  let start_price = Asset{
+    info: uusd.clone(),
+    amount: Uint128::from(100000000u128)
+  };
+
+  let fixed_price = Asset {
+    info: uusd.clone(),
+    amount: Uint128::from(200000000u128)
+  };
+
+  let make_auction_order_msg = Cw721HookMsg::MakeAuctionOrder { 
+    start_price: start_price.clone(),
+    expiration: Expiration::AtHeight(12_400),
+    fixed_price: Some(fixed_price)
+  };
+
+  let receive_msg: Cw721ReceiveMsg = Cw721ReceiveMsg {
+    sender: seller.clone(),
+    token_id: "no1".to_string(),
+    msg: to_binary(&make_auction_order_msg).unwrap(),
+  };
+
+  let info = mock_info("spaceship", &[]);
+
+  let _res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::ReceiveNft(receive_msg)).unwrap();
+
+  // cancel (no bider)
+
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 1
+  };
+
+  let info = mock_info("seller", &[]);
+
+  let res = market.execute(deps.as_mut(), mock_env(), info, cancel_msg).unwrap();
+
+  assert_eq!(
+    res.messages,
+    vec![
+      // return nft to seller
+      SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: "spaceship".to_string(),
+        msg: to_binary(&Cw721ExecuteMsg::TransferNft {
+          recipient: "seller".to_string(), 
+          token_id: "no1".to_string()
+        }).unwrap(),
+        funds: vec![]
+      })),
+    ]
+  );
+
+  // check order removed
+
+  let order = market.orders.may_load(&deps.storage, U64Key::new(1));
+
+  assert_eq!(order, Ok(None));
+
+  // make order
+  let start_price = Asset{
+    info: uusd.clone(),
+    amount: Uint128::from(100000000u128)
+  };
+
+  let fixed_price = Asset {
+    info: uusd.clone(),
+    amount: Uint128::from(200000000u128)
+  };
+
+  let make_auction_order_msg = Cw721HookMsg::MakeAuctionOrder { 
+    start_price: start_price.clone(),
+    expiration: Expiration::AtHeight(12_400),
+    fixed_price: Some(fixed_price)
+  };
+
+  let receive_msg: Cw721ReceiveMsg = Cw721ReceiveMsg {
+    sender: seller.clone(),
+    token_id: "no1".to_string(),
+    msg: to_binary(&make_auction_order_msg).unwrap(),
+  };
+
+  let info = mock_info("spaceship", &[]);
+
+  let _res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::ReceiveNft(receive_msg)).unwrap();
+
+  // bid
+  let mut mock_env = mock_env();
+
+  let bid_price = Asset{
+    info: uusd.clone(),
+    amount: Uint128::from(120000000u128)
+  };
+
+  let bid_msg = ExecuteMsg::Bid {
+    order_id: 2,
+    bid_price: bid_price.clone(),
+  };
+
+  let info = mock_info("bidder1", &[Coin{ denom: "uusd".to_string(), amount:  Uint128::from(120000000u128)}]);
+
+  mock_env.block.height = 12346;
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, bid_msg).unwrap();
+
+  // try to cancel auction with balance mismatch
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 2
+  };
+
+  let info = mock_info("seller", &[Coin{ denom: "uusd".to_string(), amount: Uint128::from(100u128) }]);
+
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, cancel_msg);
+  
+  match res {
+    Err(ContractError::CancelFeeMismatch { fee_asset: _ } ) => assert!(true),
+    _ => panic!("Must return cancel fee mismatch error"),
+  }
+
+  // cancel auction
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 2
+  };
+
+  let info = mock_info("seller", &[]);
+
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, cancel_msg).unwrap();
+
+  assert_eq!(
+    res.messages,
+    vec![
+      // return asset to bidder
+      SubMsg::new(bid_price.into_msg(&deps.as_mut().querier, Addr::unchecked("bidder1")).unwrap()),
+      // return nft to seller
+      SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: "spaceship".to_string(),
+        msg: to_binary(&Cw721ExecuteMsg::TransferNft {
+          recipient: "seller".to_string(), 
+          token_id: "no1".to_string()
+        }).unwrap(),
+        funds: vec![]
+      })),
+    ]
+  );
+
+  // make order with token
+  let start_price = Asset{
+    info: mir.clone(),
+    amount: Uint128::from(100000000u128)
+  };
+
+  let fixed_price = Asset {
+    info: mir.clone(),
+    amount: Uint128::from(200000000u128)
+  };
+
+  let make_auction_order_msg = Cw721HookMsg::MakeAuctionOrder { 
+    start_price: start_price.clone(),
+    expiration: Expiration::AtHeight(12_400),
+    fixed_price: Some(fixed_price)
+  };
+
+  let receive_msg: Cw721ReceiveMsg = Cw721ReceiveMsg {
+    sender: seller.clone(),
+    token_id: "no1".to_string(),
+    msg: to_binary(&make_auction_order_msg).unwrap(),
+  };
+
+  let info = mock_info("spaceship", &[]);
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveNft(receive_msg)).unwrap();
+
+  // bid
+  let bid_price = Asset{
+    info: mir.clone(),
+    amount: Uint128::from(150000000u128)
+  };
+
+  let bid_msg = ExecuteMsg::Bid {
+    order_id: 3,
+    bid_price: bid_price.clone(),
+  };
+
+  let mut mock_env = mock_env;
+
+  mock_env.block.height = 12370;
+
+  let info = mock_info("mir_addr", &[]);
+
+  let receive_msg: Cw20ReceiveMsg = Cw20ReceiveMsg {
+    sender: "bidder".to_string(),
+    amount: Uint128::from(150000000u128),
+    msg: to_binary(&bid_msg).unwrap()
+  };
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+
+  // cancel auction
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 3
+  };
+
+  let info = mock_info("seller", &[]);
+
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, cancel_msg).unwrap();
+
+  assert_eq!(
+    res.messages,
+    vec![
+      // return asset to bidder
+      SubMsg::new(bid_price.into_msg(&deps.as_mut().querier, Addr::unchecked("bidder")).unwrap()),
+      // return nft to seller
+      SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: "spaceship".to_string(),
+        msg: to_binary(&Cw721ExecuteMsg::TransferNft {
+          recipient: "seller".to_string(), 
+          token_id: "no1".to_string()
+        }).unwrap(),
+        funds: vec![]
+      })),
+    ]
+  );
+
+  // update collection non zero cancel fee
+  mock_env.block.height = 12345;
+  let info = mock_info("owner", &[]);
+  let update_collection_msg = ExecuteMsg::UpdateCollection {
+    nft_address: "spaceship".to_string(),
+    support_assets: None,
+    royalties: None,
+    auction_cancel_fee_rate: Some(Decimal::from_ratio(5u128, 1000u128))
+  };
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, update_collection_msg).unwrap();
+
+  // make order
+  let start_price = Asset{
+    info: uusd.clone(),
+    amount: Uint128::from(100000000u128)
+  };
+
+  let fixed_price = Asset {
+    info: uusd.clone(),
+    amount: Uint128::from(200000000u128)
+  };
+
+  let make_auction_order_msg = Cw721HookMsg::MakeAuctionOrder { 
+    start_price: start_price.clone(),
+    expiration: Expiration::AtHeight(12_400),
+    fixed_price: Some(fixed_price)
+  };
+
+  let receive_msg: Cw721ReceiveMsg = Cw721ReceiveMsg {
+    sender: seller.clone(),
+    token_id: "no1".to_string(),
+    msg: to_binary(&make_auction_order_msg).unwrap(),
+  };
+
+  let info = mock_info("spaceship", &[]);
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveNft(receive_msg)).unwrap();
+
+  // bid
+  let bid_price = Asset{
+    info: uusd.clone(),
+    amount: Uint128::from(120000000u128)
+  };
+
+  let bid_msg = ExecuteMsg::Bid {
+    order_id: 4,
+    bid_price: bid_price.clone(),
+  };
+
+  let info = mock_info("bidder1", &[Coin{ denom: "uusd".to_string(), amount:  Uint128::from(120000000u128)}]);
+
+  mock_env.block.height = 12346;
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, bid_msg).unwrap();
+
+  // try to cancel auction with balance mismatch
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 4
+  };
+
+  let info = mock_info("seller", &[Coin{ denom: "uusd".to_string(), amount: Uint128::from(100u128) }]);
+
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, cancel_msg);
+  
+  match res {
+    Err(ContractError::CancelFeeMismatch { fee_asset: _ } ) => assert!(true),
+    _ => panic!("Must return cancel fee mismatch error"),
+  }
+
+  // cancel auction
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 4
+  };
+
+  let fee_asset: Asset = from_binary(&market.query(deps.as_ref(), QueryMsg::CancelFee { order_id: 4 }).unwrap()).unwrap();
+
+  let refund_asset: Asset = Asset {
+    info: fee_asset.info.clone(),
+    amount: bid_price.amount + fee_asset.amount
+  };
+
+  let info = mock_info("seller", &[Coin { denom: fee_asset.info.to_string(), amount: fee_asset.amount }]);
+
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, cancel_msg).unwrap();
+
+  assert_eq!(
+    res.messages,
+    vec![
+      // return asset to bidder
+      SubMsg::new(refund_asset.into_msg(&deps.as_mut().querier, Addr::unchecked("bidder1")).unwrap()),
+      // return nft to seller
+      SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: "spaceship".to_string(),
+        msg: to_binary(&Cw721ExecuteMsg::TransferNft {
+          recipient: "seller".to_string(), 
+          token_id: "no1".to_string()
+        }).unwrap(),
+        funds: vec![]
+      })),
+    ]
+  );
+
+  // make order with token
+  let start_price = Asset{
+    info: mir.clone(),
+    amount: Uint128::from(100000000u128)
+  };
+
+  let fixed_price = Asset {
+    info: mir.clone(),
+    amount: Uint128::from(200000000u128)
+  };
+
+  let make_auction_order_msg = Cw721HookMsg::MakeAuctionOrder { 
+    start_price: start_price.clone(),
+    expiration: Expiration::AtHeight(12_400),
+    fixed_price: Some(fixed_price)
+  };
+
+  let receive_msg: Cw721ReceiveMsg = Cw721ReceiveMsg {
+    sender: seller.clone(),
+    token_id: "no1".to_string(),
+    msg: to_binary(&make_auction_order_msg).unwrap(),
+  };
+
+  let info = mock_info("spaceship", &[]);
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveNft(receive_msg)).unwrap();
+
+  // bid
+  let bid_price = Asset{
+    info: mir.clone(),
+    amount: Uint128::from(150000000u128)
+  };
+
+  let bid_msg = ExecuteMsg::Bid {
+    order_id: 5,
+    bid_price: bid_price.clone(),
+  };
+
+  let mut mock_env = mock_env;
+
+  mock_env.block.height = 12370;
+
+  let info = mock_info("mir_addr", &[]);
+
+  let receive_msg: Cw20ReceiveMsg = Cw20ReceiveMsg {
+    sender: "bidder".to_string(),
+    amount: Uint128::from(150000000u128),
+    msg: to_binary(&bid_msg).unwrap()
+  };
+
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+
+  // try cancel auction without send
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 5
+  };
+
+  let info = mock_info("seller", &[]);
+
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, cancel_msg);
+
+  match res {
+    Err(ContractError::CancelFeeMismatch { fee_asset: _ } ) => assert!(true),
+    _ => panic!("Must return cancel fee mismatch error"),
+  }
+
+  let cancel_msg = ExecuteMsg::CancelOrder {
+    order_id: 5
+  };
+
+  let fee_asset: Asset = from_binary(&market.query(deps.as_ref(), QueryMsg::CancelFee { order_id: 5 }).unwrap()).unwrap();
+
+  let refund_asset: Asset = Asset {
+    info: fee_asset.info.clone(),
+    amount: bid_price.amount + fee_asset.amount
+  };
+
+  let receive_msg = Cw20ReceiveMsg {
+    amount: fee_asset.amount,
+    sender: seller.clone(),
+    msg: to_binary(&cancel_msg).unwrap()
+  };
+
+  let info = mock_info("mir_addr", &[]);
+
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+
+  assert_eq!(
+    res.messages,
+    vec![
+      // return asset to bidder
+      SubMsg::new(refund_asset.into_msg(&deps.as_mut().querier, Addr::unchecked("bidder")).unwrap()),
+      // return nft to seller
+      SubMsg::new(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: "spaceship".to_string(),
+        msg: to_binary(&Cw721ExecuteMsg::TransferNft {
+          recipient: "seller".to_string(), 
+          token_id: "no1".to_string()
+        }).unwrap(),
+        funds: vec![]
+      })),
+    ]
+  );
+}
+
+#[test]
 fn auction_with_fixed_price_order_test() {
   // instantiate
   let market = MarketContract::default();
@@ -662,7 +1135,8 @@ fn auction_with_fixed_price_order_test() {
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
-    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()]
+    royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
+    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();
