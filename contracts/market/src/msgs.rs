@@ -16,6 +16,7 @@ pub struct InstantiateMsg {
   pub min_increase: Decimal,
   pub max_auction_duration_block: u64,
   pub max_auction_duration_second: u64,
+  pub auction_cancel_fee_rate: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
@@ -30,13 +31,13 @@ pub enum ExecuteMsg {
     min_increase: Option<Decimal>,
     max_auction_duration_block: Option<u64>,
     max_auction_duration_second: Option<u64>,
+    auction_cancel_fee_rate: Option<Decimal>,
   },
 
   AddCollection {
     nft_address: String,
     support_assets: Vec<AssetInfo>,
     royalties: Vec<Royalty>,
-    auction_cancel_fee_rate: Decimal,
   },
 
   // if you want to delist/remove the collection, set support_asset = vec![]
@@ -45,7 +46,6 @@ pub enum ExecuteMsg {
     nft_address: String,
     support_assets: Option<Vec<AssetInfo>>,
     royalties: Option<Vec<Royalty>>,
-    auction_cancel_fee_rate: Option<Decimal>,
   },
 
   // buy nft at fixed price.

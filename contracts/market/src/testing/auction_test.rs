@@ -26,7 +26,8 @@ fn only_auction_order_test() {
     owner: "owner".to_string(),
     min_increase: Decimal::from_ratio(10u128, 100u128),
     max_auction_duration_block: 100,
-    max_auction_duration_second: 1000
+    max_auction_duration_second: 1000,
+    auction_cancel_fee_rate: Decimal::zero(),
   };
 
   let info = mock_info("owner", &[]);
@@ -61,7 +62,6 @@ fn only_auction_order_test() {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
     royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
-    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();
@@ -616,7 +616,8 @@ fn auction_cancel_test() {
     owner: "owner".to_string(),
     min_increase: Decimal::from_ratio(10u128, 100u128),
     max_auction_duration_block: 100,
-    max_auction_duration_second: 1000
+    max_auction_duration_second: 1000,
+    auction_cancel_fee_rate: Decimal::zero(),
   };
 
   let info = mock_info("owner", &[]);
@@ -644,13 +645,12 @@ fn auction_cancel_test() {
     royalty_rate: Decimal::from_ratio(3u128, 100u128)
   };
 
-  // add collection zero cancel fee
+  // add collection
   let info = mock_info("owner", &[]);
   let add_collection_msg = ExecuteMsg::AddCollection {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
     royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
-    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();
@@ -883,17 +883,18 @@ fn auction_cancel_test() {
     ]
   );
 
-  // update collection non zero cancel fee
+  // update config non zero cancel fee
   mock_env.block.height = 12345;
   let info = mock_info("owner", &[]);
-  let update_collection_msg = ExecuteMsg::UpdateCollection {
-    nft_address: "spaceship".to_string(),
-    support_assets: None,
-    royalties: None,
+  let update_config_msg = ExecuteMsg::UpdateConfig {
+    owner: None,
+    min_increase: None,
+    max_auction_duration_block: None,
+    max_auction_duration_second: None,
     auction_cancel_fee_rate: Some(Decimal::from_ratio(5u128, 1000u128))
   };
 
-  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, update_collection_msg).unwrap();
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, update_config_msg).unwrap();
 
   // make order
   let start_price = Asset{
@@ -1102,7 +1103,8 @@ fn auction_with_fixed_price_order_test() {
     owner: "owner".to_string(),
     min_increase: Decimal::from_ratio(10u128, 100u128),
     max_auction_duration_block: 100,
-    max_auction_duration_second: 1000
+    max_auction_duration_second: 1000,
+    auction_cancel_fee_rate: Decimal::from_ratio(5u128, 1000u128)
   };
 
   let info = mock_info("owner", &[]);
@@ -1136,7 +1138,6 @@ fn auction_with_fixed_price_order_test() {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
     royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
-    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();

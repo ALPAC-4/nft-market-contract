@@ -59,11 +59,11 @@ impl<'a> MarketContract<'a> {
     // if it is auction
     if let Some(auction_info) = auction_info {
       let nft_address = order.nft_address;
-      let collection = self.collections.load(deps.storage, nft_address.to_string())?;
+      let config = self.config.load(deps.storage)?;
 
       fee = Asset {
         info: auction_info.highest_bid.info,
-        amount: auction_info.highest_bid.amount * collection.auction_cancel_fee_rate
+        amount: auction_info.highest_bid.amount * config.auction_cancel_fee_rate
       }
     // if it is not auction return 0 amount asset
     } else {

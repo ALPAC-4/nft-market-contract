@@ -20,7 +20,8 @@ fn update_config_test() {
     owner: "owner".to_string(),
     min_increase: Decimal::from_ratio(10u128, 100u128),
     max_auction_duration_block: 100,
-    max_auction_duration_second: 1000
+    max_auction_duration_second: 1000,
+    auction_cancel_fee_rate: Decimal::from_ratio(5u128, 1000u128),
   };
 
   let info = mock_info("owner", &[]);
@@ -33,6 +34,7 @@ fn update_config_test() {
     min_increase: None,
     max_auction_duration_block: None,
     max_auction_duration_second: None,
+    auction_cancel_fee_rate: None,
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info.clone(), update_config_msg).unwrap();
@@ -49,6 +51,7 @@ fn update_config_test() {
     min_increase: None,
     max_auction_duration_block: None,
     max_auction_duration_second: None,
+    auction_cancel_fee_rate: None,
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, update_config_msg);
@@ -64,6 +67,7 @@ fn update_config_test() {
     min_increase: Some(Decimal::from_ratio(5u128, 100u128)),
     max_auction_duration_block: Some(123),
     max_auction_duration_second: Some(1234),
+    auction_cancel_fee_rate: Some(Decimal::from_ratio(3u128, 1000u128)),
   };
 
   let info = mock_info("next_owner", &[]);
@@ -88,7 +92,8 @@ fn add_and_update_collection_test() {
     owner: "owner".to_string(),
     min_increase: Decimal::from_ratio(10u128, 100u128),
     max_auction_duration_block: 100,
-    max_auction_duration_second: 1000
+    max_auction_duration_second: 1000,
+    auction_cancel_fee_rate: Decimal::from_ratio(5u128, 1000u128),
   };
 
   let info = mock_info("owner", &[]);
@@ -131,7 +136,6 @@ fn add_and_update_collection_test() {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone()],
     royalties: vec![normal_user_royalty],
-    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg);
@@ -147,7 +151,6 @@ fn add_and_update_collection_test() {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
     royalties: vec![nft_designer_royalty_invalid.clone(), nft_pm_royalty_invalid.clone()],
-    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg);
@@ -163,7 +166,6 @@ fn add_and_update_collection_test() {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
     royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
-    auction_cancel_fee_rate: Decimal::from_ratio(5u128, 1000u128)
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();
@@ -173,7 +175,6 @@ fn add_and_update_collection_test() {
   assert_eq!(Addr::unchecked("spaceship"), collection.nft_address);
   assert_eq!(vec![uusd.clone(), mir.clone()], collection.support_assets);
   assert_eq!(vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()], collection.royalties);
-  assert_eq!(Decimal::from_ratio(5u128, 1000u128), collection.auction_cancel_fee_rate);
 
   // try to add collection that already exist
   // dev note: do i have to remove this limit and remove update collection function?
@@ -182,7 +183,6 @@ fn add_and_update_collection_test() {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
     royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
-    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg);
@@ -198,7 +198,6 @@ fn add_and_update_collection_test() {
     nft_address: "spaceship".to_string(),
     support_assets: Some(vec![uusd.clone(), mir.clone()]),
     royalties: Some(vec![nft_designer_royalty.clone()]),
-    auction_cancel_fee_rate: Some(Decimal::zero())
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info, update_collection_msg);
@@ -214,7 +213,6 @@ fn add_and_update_collection_test() {
     nft_address: "spaceship".to_string(),
     support_assets: None,
     royalties: Some(vec![nft_designer_royalty_invalid.clone(), nft_pm_royalty_invalid.clone()]),
-    auction_cancel_fee_rate: Some(Decimal::zero())
   };
 
   let res = market.execute(deps.as_mut(), mock_env(), info.clone(), update_collection_msg);
@@ -229,7 +227,6 @@ fn add_and_update_collection_test() {
     nft_address: "spaceship".to_string(),
     support_assets: Some(vec![uusd.clone()]),
     royalties: Some(vec![nft_designer_royalty.clone()]),
-    auction_cancel_fee_rate: Some(Decimal::zero())
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, update_collection_msg);
@@ -239,5 +236,4 @@ fn add_and_update_collection_test() {
   assert_eq!(Addr::unchecked("spaceship"), collection.nft_address);
   assert_eq!(vec![uusd], collection.support_assets);
   assert_eq!(vec![nft_designer_royalty], collection.royalties);
-  assert_eq!(Decimal::zero(), collection.auction_cancel_fee_rate);
 }
