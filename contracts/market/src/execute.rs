@@ -1,4 +1,4 @@
-use cosmwasm_std::{from_binary, to_binary, Addr, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, StdResult, Response, WasmMsg, Uint128};
+use cosmwasm_std::{from_binary, to_binary, Addr, CosmosMsg, Decimal, Deps, DepsMut, Env, MessageInfo, StdError, StdResult, Response, WasmMsg, Uint128};
 use cw_storage_plus::U64Key;
 use cw721::{Cw721ReceiveMsg, Cw721ExecuteMsg};
 use cw20::Cw20ReceiveMsg;
@@ -17,11 +17,17 @@ impl<'a> MarketContract<'a> {
     _info: MessageInfo,
     msg: InstantiateMsg
   ) -> StdResult<Response> {
+    
+    if msg.auction_cancel_fee_rate > Decimal::one() {
+      return Err(StdError::generic_err("Cancel fee rate can't exceed 1"))
+    }
+
     let config = Config {
       owner: deps.api.addr_validate(msg.owner.as_str())?,
       min_increase: msg.min_increase,
       max_auction_duration_block: msg.max_auction_duration_block,
       max_auction_duration_second: msg.max_auction_duration_second,
+      auction_cancel_fee_rate: msg.auction_cancel_fee_rate,
     };
 
     self.config.save(deps.storage, &config)?;
@@ -41,14 +47,14 @@ impl<'a> MarketContract<'a> {
     match msg {
       ExecuteMsg::ReceiveNft(msg) => self.receive_nft(deps, env, info, msg),
       ExecuteMsg::ReceiveToken(msg) => self.receive_token(deps, env, info, msg),
-      ExecuteMsg::UpdateConfig { owner, min_increase, max_auction_duration_block, max_auction_duration_second } 
-        => self.update_config(deps, env, info, owner, min_increase, max_auction_duration_block, max_auction_duration_second),
+      ExecuteMsg::UpdateConfig { owner, min_increase, max_auction_duration_block, max_auction_duration_second, auction_cancel_fee_rate } 
+        => self.update_config(deps, env, info, owner, min_increase, max_auction_duration_block, max_auction_duration_second, auction_cancel_fee_rate),
       ExecuteMsg::ExecuteOrder { order_id } => self.execute_order(deps, env, info.clone(), info.sender, order_id, None),
       ExecuteMsg::CancelOrder { order_id } => self.cancel_order(deps, env, info.clone(), info.sender, order_id, None),
-      ExecuteMsg::AddCollection { nft_address, support_assets, royalties, auction_cancel_fee_rate } 
-        => self.add_collection(deps, env, info, nft_address, support_assets, royalties, auction_cancel_fee_rate),
-      ExecuteMsg::UpdateCollection { nft_address, support_assets, royalties, auction_cancel_fee_rate } 
-        => self.update_collection(deps, env, info, nft_address, support_assets, royalties, auction_cancel_fee_rate),
+      ExecuteMsg::AddCollection { nft_address, support_assets, royalties } 
+        => self.add_collection(deps, env, info, nft_address, support_assets, royalties),
+      ExecuteMsg::UpdateCollection { nft_address, support_assets, royalties } 
+        => self.update_collection(deps, env, info, nft_address, support_assets, royalties),
       ExecuteMsg::Bid { order_id, bid_price } => self.bid(deps, env, info.clone(), info.sender, order_id, bid_price),
       ExecuteMsg::ExecuteAuction { order_id } => self.execute_auction(deps, env, info, order_id)
     }
@@ -247,7 +253,8 @@ impl<'a> MarketContract <'a> {
     owner: Option<String>,
     min_increase: Option<Decimal>,
     max_auction_duration_block: Option<u64>,
-    max_auction_duration_second: Option<u64>
+    max_auction_duration_second: Option<u64>,
+    auction_cancel_fee_rate: Option<Decimal>
   ) -> Result<Response, ContractError> {
     let mut config: Config = self.config.load(deps.storage)?;
     
@@ -269,6 +276,14 @@ impl<'a> MarketContract <'a> {
 
     if let Some(max_auction_duration_second) = max_auction_duration_second {
       config.max_auction_duration_second = max_auction_duration_second;
+    }
+
+    if let Some(auction_cancel_fee_rate) = auction_cancel_fee_rate {
+      if auction_cancel_fee_rate > Decimal::one() {
+        return Err(ContractError::InvalidFeeRate {})
+      }
+
+      config.auction_cancel_fee_rate = auction_cancel_fee_rate;
     }
 
     self.config.save(deps.storage, &config)?;
@@ -434,7 +449,6 @@ impl<'a> MarketContract <'a> {
     nft_address: String,
     support_assets: Vec<AssetInfo>,
     royalties: Vec<Royalty>,
-    auction_cancel_fee_rate: Decimal,
   ) -> Result<Response, ContractError> {
     // only owner can execute this
     let config = self.config.load(deps.storage)?;
@@ -465,7 +479,6 @@ impl<'a> MarketContract <'a> {
       nft_address: deps.api.addr_validate(&nft_address)?,
       royalties,
       support_assets,
-      auction_cancel_fee_rate,
     };
 
     self.collections.save(deps.storage, nft_address.clone(), &collection_info)?;
@@ -485,7 +498,6 @@ impl<'a> MarketContract <'a> {
     nft_address: String,
     support_assets: Option<Vec<AssetInfo>>,
     royalties: Option<Vec<Royalty>>,
-    auction_cancel_fee_rate: Option<Decimal>
   ) -> Result<Response, ContractError> {
     // only owner can execute this
     let config = self.config.load(deps.storage)?;
@@ -512,14 +524,6 @@ impl<'a> MarketContract <'a> {
       }
 
       collection.royalties = royalties;
-    }
-
-    if let Some(auction_cancel_fee_rate) = auction_cancel_fee_rate {
-      if auction_cancel_fee_rate > Decimal::one() {
-        return Err(ContractError::InvalidFeeRate {})
-      }
-
-      collection.auction_cancel_fee_rate = auction_cancel_fee_rate;
     }
 
     self.collections.save(deps.storage, nft_address.clone(), &collection)?;
@@ -671,14 +675,14 @@ impl<'a> MarketContract <'a> {
   ) -> Result<Vec<CosmosMsg>, ContractError> {
     let auction_info = order.auction_info.unwrap();
     let bidder = auction_info.bidder;
-    let collection_info = self.collections.load(deps.storage, order.nft_address.to_string())?;
+    let config = self.config.load(deps.storage)?;
 
     let mut messages: Vec<CosmosMsg> = vec![];
 
     // if bid exist refund bid amount + cancel fee
     if let Some(bidder) = bidder {
       let bid_price = auction_info.highest_bid;
-      let cancel_fee_amount = bid_price.amount * collection_info.auction_cancel_fee_rate;
+      let cancel_fee_amount = bid_price.amount * config.auction_cancel_fee_rate;
 
       let fee_asset = Asset {
         info: bid_price.info.clone(),

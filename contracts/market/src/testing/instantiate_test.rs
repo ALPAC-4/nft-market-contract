@@ -17,7 +17,8 @@ fn instantiate_test() {
     owner: "owner".to_string(),
     min_increase: Decimal::from_ratio(10u128, 100u128),
     max_auction_duration_block: 100,
-    max_auction_duration_second: 1000
+    max_auction_duration_second: 1000,
+    auction_cancel_fee_rate: Decimal::from_ratio(5u128, 1000u128),
   };
 
   let info = mock_info("owner", &[]);

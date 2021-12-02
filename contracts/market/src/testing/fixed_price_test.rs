@@ -23,7 +23,8 @@ fn fixed_price_order_test() {
     owner: "owner".to_string(),
     min_increase: Decimal::from_ratio(10u128, 100u128),
     max_auction_duration_block: 100,
-    max_auction_duration_second: 1000
+    max_auction_duration_second: 1000,
+    auction_cancel_fee_rate: Decimal::from_ratio(5u128, 1000u128),
   };
 
   let info = mock_info("owner", &[]);
@@ -58,7 +59,6 @@ fn fixed_price_order_test() {
     nft_address: "spaceship".to_string(),
     support_assets: vec![uusd.clone(), mir.clone()],
     royalties: vec![nft_designer_royalty.clone(), nft_pm_royalty.clone()],
-    auction_cancel_fee_rate: Decimal::zero()
   };
 
   let _res = market.execute(deps.as_mut(), mock_env(), info, add_collection_msg).unwrap();

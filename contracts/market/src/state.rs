@@ -48,6 +48,7 @@ pub struct Config {
   pub min_increase: Decimal,
   pub max_auction_duration_block: u64,
   pub max_auction_duration_second: u64,
+  pub auction_cancel_fee_rate: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -55,8 +56,6 @@ pub struct CollectionInfo {
   pub nft_address: Addr,
   pub support_assets: Vec<AssetInfo>,
   pub royalties: Vec<Royalty>,
-  // dev note. do i have to move it to config?
-  pub auction_cancel_fee_rate: Decimal,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
