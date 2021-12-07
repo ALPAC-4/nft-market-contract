@@ -58,7 +58,6 @@ impl<'a> MarketContract<'a> {
 
     // if it is auction
     if let Some(auction_info) = auction_info {
-      let nft_address = order.nft_address;
       let config = self.config.load(deps.storage)?;
 
       fee = Asset {
