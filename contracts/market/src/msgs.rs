@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use cw721::Cw721ReceiveMsg;
 use cw20::Cw20ReceiveMsg;
 use cw0::Expiration;
-use cosmwasm_std::Decimal;
+use cosmwasm_std::{Addr, Decimal};
 
 use crate::asset::{Asset, AssetInfo};
 use crate::state::Royalty;
@@ -117,6 +117,7 @@ pub enum QueryMsg {
   },
 
   Orders {
+    seller_address: Option<Addr>,
     start_after: Option<u64>,
     limit: Option<u32>
   },

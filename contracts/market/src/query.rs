@@ -1,5 +1,6 @@
-use cosmwasm_std::{to_binary, Binary, Deps, StdResult, Order::Ascending as Ascending, Uint128};
+use cosmwasm_std::{to_binary, Addr, Binary, Deps, StdResult, Order::Ascending as Ascending, Uint128};
 use cw_storage_plus::{Bound, U64Key};
+use std::marker::PhantomData;
 
 use crate::state::{MarketContract, CollectionInfo, Order};
 use crate::msgs::QueryMsg;
@@ -9,7 +10,7 @@ const DEFAULT_LIMIT: u32 = 10;
 const MAX_LIMIT: u32 = 30;
 
 impl<'a> MarketContract<'a> {
-  fn orders(&self, deps: Deps, start_after: Option<u64>, limit: Option<u32>) -> StdResult<Vec<Order>> {
+  fn orders(&self, deps: Deps, seller_address: Option<Addr>, start_after: Option<u64>, limit: Option<u32>) -> StdResult<Vec<Order>> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
     let start = if let Some(start_after) = start_after {
       Some(Bound::exclusive(U64Key::new(start_after)))
@@ -17,14 +18,34 @@ impl<'a> MarketContract<'a> {
       None
     };
 
-    let orders: Vec<Order> = self.orders
+    let orders: Vec<Order> = if let Some(seller_address) = seller_address {
+      let pks: Vec<_> = self
+      .orders
+      .idx
+      .seller_address
+      .prefix(seller_address)
+      .keys(deps.storage, start, None, Ascending)
+      .take(limit)
+      .collect();
+
+      pks.iter().map(|v|  {
+        let restruct_int_key = U64Key {
+          wrapped: v.clone(),
+          data: PhantomData
+        };
+        let order = self.orders.load(deps.storage, restruct_int_key).unwrap();
+        return order
+      }).collect()
+    } else {
+      self.orders
       .range(deps.storage, start, None, Ascending)
       .take(limit)
       .map(|item| {
         let(_, v) = item.unwrap();
         v
       })
-      .collect();
+      .collect()
+    };
 
     Ok(orders)
   }
@@ -81,7 +102,8 @@ impl<'a> MarketContract<'a> {
     match msg {
       QueryMsg::Config {} => to_binary(&self.config.load(deps.storage)?),
       QueryMsg::Order { order_id } => to_binary(&self.orders.load(deps.storage, U64Key::new(order_id))?),
-      QueryMsg::Orders { start_after, limit } => to_binary(&self.orders(deps, start_after, limit)?),
+      QueryMsg::Orders { seller_address, start_after, limit } 
+        => to_binary(&self.orders(deps, seller_address, start_after, limit)?),
       QueryMsg::CollectionInfo { nft_address } 
         => to_binary(&self.collections.load(deps.storage, nft_address)?),
       QueryMsg::CollectionInfos { start_after, limit }
