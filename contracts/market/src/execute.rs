@@ -374,7 +374,7 @@ impl<'a> MarketContract <'a> {
         buyer = "null".to_string();
 
         // remove order
-        self.orders.remove(deps.storage, U64Key::new(order.id));
+        self.orders.remove(deps.storage, U64Key::new(order.id))?;
       }
 
       Ok(Response::new().add_messages(messages)
@@ -432,7 +432,7 @@ impl<'a> MarketContract <'a> {
     }));
 
     // remove order
-    self.orders.remove(deps.storage, key);
+    self.orders.remove(deps.storage, key)?;
 
     Ok(Response::new().add_messages(messages)
       .add_attribute("action", "cancel_order")
@@ -661,7 +661,7 @@ impl<'a> MarketContract <'a> {
     );
 
     // remove order
-    self.orders.remove(deps.storage, U64Key::new(order.id));
+    self.orders.remove(deps.storage, U64Key::new(order.id))?;
 
     Ok((messages, remain_amount))
   }

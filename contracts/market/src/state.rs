@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use cosmwasm_std::{Addr, Decimal};
 
-use cw_storage_plus::{Map, Item, U64Key};
+use cw_storage_plus::{Map, MultiIndex, Index, IndexedMap, IndexList, Item, U64Key};
 use cw0::Expiration;
 
 use crate::asset::{Asset, AssetInfo};
@@ -11,7 +11,8 @@ use crate::asset::{Asset, AssetInfo};
 pub struct MarketContract<'a> {
   pub config: Item<'a, Config>,
   pub collections: Map<'a, String, CollectionInfo>,
-  pub orders: Map<'a, U64Key, Order>,
+  // change it to IndexedMap (with seller index)
+  pub orders: IndexedMap<'a, U64Key, Order, OrderIndexes<'a>>,
   pub order_index: Item<'a, u64>
 }
 
@@ -21,7 +22,8 @@ impl Default for MarketContract<'static> {
       "config",
       "collections",
       "auctions",
-      "order_index"
+      "order_index",
+      "seller_address",
     )
   }
 }
@@ -31,13 +33,17 @@ impl<'a> MarketContract<'a> {
     config_key: &'a str,
     collections_key: &'a str,
     orders_key: &'a str,
-    order_index: &'a str,
+    order_index_key: &'a str,
+    seller_address_key: &'a str,
   ) -> Self {
+    let order_indexes = OrderIndexes {
+      seller_address: MultiIndex::new(seller_idx, orders_key, seller_address_key),
+    };
     Self {
       config: Item::new(config_key),
       collections: Map::new(collections_key),
-      orders: Map::new(orders_key),
-      order_index: Item::new(order_index)
+      orders: IndexedMap::new(orders_key, order_indexes),
+      order_index: Item::new(order_index_key)
     }
   }
 }
@@ -80,4 +86,20 @@ pub struct AuctionInfo {
   // if None, no bid yet.
   pub bidder: Option<Addr>,
   pub expiration: Expiration
+}
+
+pub struct OrderIndexes<'a> {
+  pub seller_address: MultiIndex<'a, (Addr, Vec<u8>), Order>
+}
+
+pub fn seller_idx(d: &Order, k: Vec<u8>) -> (Addr, Vec<u8>) {
+  (d.seller_address.clone(), k)
+}
+
+
+impl<'a> IndexList<Order> for OrderIndexes<'a> {
+  fn get_indexes(&'_ self) -> Box<dyn Iterator<Item = &'_ dyn Index<Order>> + '_> {
+    let v: Vec<&dyn Index<Order>> = vec![&self.seller_address];
+    Box::new(v.into_iter())
+  }
 }
