@@ -46,7 +46,7 @@ impl<'a> MarketContract<'a> {
   ) -> Result<Response, ContractError> {
     match msg {
       ExecuteMsg::ReceiveNft(msg) => self.receive_nft(deps, env, info, msg),
-      ExecuteMsg::ReceiveToken(msg) => self.receive_token(deps, env, info, msg),
+      ExecuteMsg::Receive(msg) => self.receive_token(deps, env, info, msg),
       ExecuteMsg::UpdateConfig { owner, min_increase, max_auction_duration_block, max_auction_duration_second, auction_cancel_fee_rate } 
         => self.update_config(deps, env, info, owner, min_increase, max_auction_duration_block, max_auction_duration_second, auction_cancel_fee_rate),
       ExecuteMsg::ExecuteOrder { order_id } => self.execute_order(deps, env, info.clone(), info.sender, order_id, None),

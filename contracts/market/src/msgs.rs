@@ -24,7 +24,7 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
   ReceiveNft(Cw721ReceiveMsg),
 
-  ReceiveToken(Cw20ReceiveMsg),
+  Receive(Cw20ReceiveMsg),
 
   UpdateConfig {
     owner: Option<String>,
