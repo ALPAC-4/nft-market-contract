@@ -855,7 +855,7 @@ fn auction_cancel_test() {
     msg: to_binary(&bid_msg).unwrap()
   };
 
-  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::Receive(receive_msg)).unwrap();
 
   // cancel auction
   let cancel_msg = ExecuteMsg::CancelOrder {
@@ -1037,7 +1037,7 @@ fn auction_cancel_test() {
     msg: to_binary(&bid_msg).unwrap()
   };
 
-  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::Receive(receive_msg)).unwrap();
 
   // try cancel auction without send
   let cancel_msg = ExecuteMsg::CancelOrder {
@@ -1072,7 +1072,7 @@ fn auction_cancel_test() {
 
   let info = mock_info("mir_addr", &[]);
 
-  let res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+  let res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::Receive(receive_msg)).unwrap();
 
   assert_eq!(
     res.messages,
@@ -1235,7 +1235,7 @@ fn auction_with_fixed_price_order_test() {
     msg: to_binary(&execute_msg).unwrap()
   };
 
-  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::Receive(receive_msg)).unwrap();
 
     // royalty amounts
     let designer_royalty_asset = Asset {
@@ -1324,7 +1324,7 @@ fn auction_with_fixed_price_order_test() {
     msg: to_binary(&bid_msg).unwrap()
   };
 
-  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+  let _res = market.execute(deps.as_mut(), mock_env.clone(), info, ExecuteMsg::Receive(receive_msg)).unwrap();
 
   // execute order
   let execute_msg = ExecuteMsg::ExecuteOrder { order_id: 2 };
@@ -1337,7 +1337,7 @@ fn auction_with_fixed_price_order_test() {
     msg: to_binary(&execute_msg).unwrap()
   };
 
-  let res = market.execute(deps.as_mut(), mock_env, info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+  let res = market.execute(deps.as_mut(), mock_env, info, ExecuteMsg::Receive(receive_msg)).unwrap();
 
     // royalty amounts
     let designer_royalty_asset = Asset {

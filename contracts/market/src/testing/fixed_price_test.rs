@@ -272,7 +272,7 @@ fn fixed_price_order_test() {
     msg: to_binary(&execute_msg).unwrap()
   };
 
-  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::ReceiveToken(receive_msg));
+  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::Receive(receive_msg));
 
   match res {
     Err(ContractError::TokenMismatch {}) => assert!(true),
@@ -290,7 +290,7 @@ fn fixed_price_order_test() {
     msg: to_binary(&execute_msg).unwrap()
   };
 
-  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::ReceiveToken(receive_msg));
+  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::Receive(receive_msg));
 
   match res {
     Err(ContractError::TokenMismatch {}) => assert!(true),
@@ -308,7 +308,7 @@ fn fixed_price_order_test() {
     msg: to_binary(&execute_msg).unwrap()
   };
 
-  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::ReceiveToken(receive_msg)).unwrap();
+  let res = market.execute(deps.as_mut(), mock_env(), info, ExecuteMsg::Receive(receive_msg)).unwrap();
 
   // royalty amounts
   let designer_royalty_asset = Asset {
